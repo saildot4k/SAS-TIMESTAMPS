@@ -1,6 +1,7 @@
 /* SAS-TimeStamps API Service Worker
    - Exposes GET /api?name=<FOLDER>
    - Returns JSON with deterministic timestamps based on your rules
+   - Uses a FIXED UTC BASE so results match the Python script exactly.
    - No server required; runs entirely on GitHub Pages via SW
 
    NOTE: A client must visit the site once to install the SW.
@@ -52,16 +53,10 @@ const CHARSET = " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-.";
 const CHAR_INDEX = new Map(Array.from(CHARSET).map((ch,i)=>[ch,i]));
 const BASE = CHARSET.length;
 
-// Helpers
-function toUTCDateFromLocalBaseMinusSeconds(totalSeconds) {
-  // Base local time: 2098-12-31 23:59:59, converted to UTC after subtracting
-  const baseLocal = new Date(2098, 11, 31, 23, 59, 59); // months 0-based; 11 = December
-  // Subtract seconds in local time
-  const tsLocal = new Date(baseLocal.getTime() - totalSeconds * 1000);
-  // Convert that local instant to UTC ISO (Date stores ms since epoch UTC)
-  return tsLocal; // JS Date is always an absolute instant; format later
-}
+// Fixed UTC base equal to 12/31/2098 23:59:59 PST (UTC−08:00) -> 2099-01-01 07:59:59Z
+const FIXED_BASE_UTC_MS = Date.UTC(2099, 0, 1, 7, 59, 59); // 07:59:59Z
 
+// Helpers
 function normalizeToEffective(name) {
   const n = String(name || "").trim().toUpperCase();
 
@@ -157,7 +152,8 @@ function planForName(originalName) {
   const nameOffset = (slot * SECONDS_BETWEEN_ITEMS) + nudge;
   const offsetSec  = catOffset + nameOffset;
 
-  const dt = toUTCDateFromLocalBaseMinusSeconds(offsetSec);
+  // Fixed UTC base minus deterministic offset
+  const dt = new Date(FIXED_BASE_UTC_MS - offsetSec * 1000);
 
   return {
     ok: true,
@@ -169,7 +165,6 @@ function planForName(originalName) {
     slot,
     offsetSeconds: offsetSec,
     payloadUsed, // the dash-stripped string used for ordering
-    // Times
     isoLocal: new Date(dt.valueOf()).toLocaleString(), // local display
     isoUTC:   new Date(dt.valueOf()).toISOString(),    // UTC ISO
     epochMillis: dt.valueOf()
@@ -178,12 +173,10 @@ function planForName(originalName) {
 
 // ===== Service Worker plumbing =====
 self.addEventListener('install', (evt) => {
-  // activate immediately
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (evt) => {
-  // take control immediately
   evt.waitUntil(self.clients.claim());
 });
 
